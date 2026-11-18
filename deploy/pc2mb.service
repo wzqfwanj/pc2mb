@@ -1,0 +1,23 @@
+[Unit]
+Description=pc2mb cloud remote desktop server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pc2mb
+Group=pc2mb
+WorkingDirectory=/opt/pc2mb
+EnvironmentFile=/opt/pc2mb/.env
+ExecStart=/opt/pc2mb/.venv/bin/python -m uvicorn server.app:app --host 127.0.0.1 --port 18091 --log-level info --no-access-log
+Restart=always
+RestartSec=3
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/opt/pc2mb
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target

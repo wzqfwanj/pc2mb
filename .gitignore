@@ -1,0 +1,17 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+agent/agent.env
+agent/.launch.cmd
+agent/.launch.vbs
+agent/agent.log
+agent/_selftest.jpg
+agent/_scratch.jpg
+*.log
+.pytest_cache/
+.DS_Store
+Thumbs.db
+docs/screenshots/
+tests/output/

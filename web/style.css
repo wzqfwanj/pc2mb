@@ -1,0 +1,542 @@
+/* ==========================================================================
+   pc2mb 极简前端样式
+   - 明 / 灰 / 暗 三主题：html[data-theme] + CSS 变量
+   - 无第三方库、无 CDN、无外部字体（只用系统字体）
+   ========================================================================== */
+
+/* ---------- 主题变量 ---------- */
+:root,
+:root[data-theme="light"] {
+  --bg: #f1f3f5;
+  --surface: #ffffff;
+  --surface-2: #f4f6f8;
+  --text: #171a1f;
+  --text-dim: #697180;
+  --border: rgba(15, 23, 42, 0.12);
+  --accent: #2563eb;
+  --accent-text: #ffffff;
+  --accent-soft: rgba(37, 99, 235, 0.16);
+  --stage-bg: #e4e8ee;
+  --overlay-bg: rgba(15, 23, 42, 0.26);
+  --shadow: 0 12px 32px rgba(15, 23, 42, 0.16);
+  --ok: #16a34a;
+  --warn: #d97706;
+  --err: #dc2626;
+  color-scheme: light;
+}
+
+:root[data-theme="gray"] {
+  --bg: #3a3f47;
+  --surface: #454b55;
+  --surface-2: #4d535e;
+  --text: #f1f3f6;
+  --text-dim: #b8bfc9;
+  --border: rgba(255, 255, 255, 0.14);
+  --accent: #8fb1ff;
+  --accent-text: #10141a;
+  --accent-soft: rgba(143, 177, 255, 0.22);
+  --stage-bg: #2b2f36;
+  --overlay-bg: rgba(0, 0, 0, 0.34);
+  --shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+  --ok: #4ade80;
+  --warn: #fbbf24;
+  --err: #f87171;
+  color-scheme: dark;
+}
+
+:root[data-theme="dark"] {
+  --bg: #0e1116;
+  --surface: #171b22;
+  --surface-2: #1e232c;
+  --text: #e8ebf0;
+  --text-dim: #9aa3b2;
+  --border: rgba(255, 255, 255, 0.1);
+  --accent: #5b8cff;
+  --accent-text: #ffffff;
+  --accent-soft: rgba(91, 140, 255, 0.24);
+  --stage-bg: #07090c;
+  --overlay-bg: rgba(0, 0, 0, 0.46);
+  --shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+  --ok: #34d399;
+  --warn: #fbbf24;
+  --err: #f87171;
+  color-scheme: dark;
+}
+
+/* ---------- 基础 ---------- */
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* ---------- 通用按钮 ---------- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 42px;
+  padding: 0 16px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: var(--surface-2);
+  color: var(--text);
+  cursor: pointer;
+  transition: background 0.15s ease, filter 0.15s ease, border-color 0.15s ease;
+}
+
+.btn.primary {
+  width: 100%;
+  background: var(--accent);
+  color: var(--accent-text);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.btn.primary:hover {
+  filter: brightness(1.06);
+}
+
+.btn.ghost {
+  height: 36px;
+  background: transparent;
+  border-color: var(--border);
+}
+
+.btn.ghost:hover {
+  background: var(--surface-2);
+}
+
+.btn:disabled {
+  opacity: 0.65;
+  cursor: default;
+  filter: none;
+}
+
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.icon-btn:hover {
+  background: var(--surface-2);
+}
+
+.icon-btn:active {
+  transform: scale(0.96);
+}
+
+.icon-btn svg {
+  width: 18px;
+  height: 18px;
+}
+
+.icon-btn svg.fs-enter,
+.icon-btn svg.fs-exit {
+  display: block;
+}
+
+.icon-btn svg.fs-exit,
+.is-fullscreen .icon-btn svg.fs-enter {
+  display: none;
+}
+
+.is-fullscreen .icon-btn svg.fs-exit {
+  display: block;
+}
+
+/* ==========================================================================
+   登录页
+   ========================================================================== */
+#login-view {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100%;
+  padding: 24px;
+  overflow-y: auto;
+}
+
+.login-theme {
+  position: fixed;
+  top: calc(14px + env(safe-area-inset-top));
+  right: calc(14px + env(safe-area-inset-right));
+  background: var(--surface);
+  border-color: var(--border);
+  box-shadow: var(--shadow);
+}
+
+.login-card {
+  width: 100%;
+  max-width: 340px;
+  padding: 28px 26px 22px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+}
+
+.login-card h1 {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+}
+
+.login-card .sub {
+  margin: 6px 0 22px;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+.field {
+  display: block;
+  margin: 0 0 14px;
+}
+
+.field > span {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.field input {
+  width: 100%;
+  height: 42px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--text);
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.field input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.field input::placeholder {
+  color: var(--text-dim);
+}
+
+.error {
+  margin: 0;
+  font-size: 13px;
+  color: var(--err);
+  min-height: 20px;
+  padding-bottom: 2px;
+}
+
+.hint {
+  margin: 14px 0 0;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--text-dim);
+  text-align: center;
+}
+
+/* ==========================================================================
+   控制台
+   ========================================================================== */
+#console-view {
+  position: fixed;
+  inset: 0;
+  background: var(--stage-bg);
+  overflow: hidden;
+}
+
+.stage {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+#screen {
+  display: block;
+  width: 100%;
+  height: 100%;
+  outline: none;
+  cursor: default;
+  touch-action: none;
+}
+
+/* ---------- 工具栏 ---------- */
+.toolbar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 5;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding: calc(10px + env(safe-area-inset-top)) 10px 10px;
+  pointer-events: none;
+}
+
+.toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 4px 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  pointer-events: auto;
+}
+
+.dot {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-dim);
+}
+
+.dot[data-state="on"] {
+  background: var(--ok);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.dot[data-state="wait"] {
+  background: var(--warn);
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+.dot[data-state="err"] {
+  background: var(--err);
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+
+.conn-text {
+  font-size: 12px;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.res {
+  font-size: 12px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.fps {
+  min-width: 46px;
+  margin-right: 2px;
+  font-size: 12px;
+  color: var(--text-dim);
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.touch-only {
+  display: none;
+}
+
+@media (hover: none), (pointer: coarse) {
+  .touch-only {
+    display: inline-flex;
+  }
+}
+
+@media (max-width: 560px) {
+  .res {
+    display: none;
+  }
+
+  .fps {
+    min-width: 0;
+  }
+
+  .toolbar {
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+
+  .toolbar-group {
+    padding: 4px 6px;
+    gap: 2px;
+  }
+
+  .icon-btn {
+    width: 34px;
+    height: 34px;
+  }
+}
+
+/* ---------- 遮罩 / 重连提示 ---------- */
+.overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: var(--overlay-bg);
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
+}
+
+.overlay-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  max-width: 320px;
+  padding: 18px 22px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+  text-align: center;
+}
+
+#overlay-text {
+  margin: 0;
+  font-size: 13px;
+}
+
+.spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ---------- 手机特殊键条 ---------- */
+.keybar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 6;
+  display: flex;
+  gap: 6px;
+  padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
+  overflow-x: auto;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  touch-action: pan-x;
+  scrollbar-width: thin;
+}
+
+.key {
+  flex: 0 0 auto;
+  min-width: 44px;
+  height: 38px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 13px;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.key:active {
+  background: var(--accent-soft);
+}
+
+.key.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+
+/* ---------- 隐藏 IME 输入框 ---------- */
+.ime {
+  position: fixed;
+  left: 0;
+  bottom: 0;
+  z-index: 0;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  resize: none;
+  pointer-events: none;
+  font-size: 16px;
+}
+
+/* ---------- 全屏 ---------- */
+:fullscreen {
+  background: var(--stage-bg);
+}
+
+.is-fullscreen #console-view {
+  position: fixed;
+  inset: 0;
+}

@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#f1f3f5">
+  <meta name="description" content="pc2mb · 浏览器远程控制本机 Windows 桌面">
+  <title>pc2mb · 远程桌面</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='3' y='5' width='26' height='17' rx='3' fill='%232563eb'/%3E%3Crect x='9' y='25' width='14' height='3' rx='1.5' fill='%232563eb'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="./style.css">
+  <script>
+    /* 在首屏渲染前恢复主题，避免闪烁；无外部依赖。 */
+    (function () {
+      try {
+        var t = localStorage.getItem('pc2mb-theme');
+        if (t === 'light' || t === 'gray' || t === 'dark') {
+          document.documentElement.setAttribute('data-theme', t);
+          var colors = { light: '#f1f3f5', gray: '#3a3f47', dark: '#0e1116' };
+          var meta = document.querySelector('meta[name="theme-color"]');
+          if (meta) meta.setAttribute('content', colors[t] || colors.light);
+        }
+      } catch (e) {}
+    })();
+  </script>
+</head>
+<body data-view="boot">
+
+  <!-- ============ 登录页 ============ -->
+  <section id="login-view" class="view" hidden>
+    <button id="login-theme" class="icon-btn login-theme" type="button" title="切换主题" aria-label="切换主题">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="9"></circle>
+        <path d="M12 3a9 9 0 0 0 0 18z" fill="currentColor" stroke="none"></path>
+      </svg>
+    </button>
+
+    <div class="login-card">
+      <h1>pc2mb</h1>
+      <p class="sub">浏览器远程控制本机 Windows 桌面</p>
+
+      <form id="login-form" novalidate>
+        <label class="field" for="login-user">
+          <span>账号</span>
+          <input id="login-user" name="username" type="text" autocomplete="username"
+                 autocapitalize="off" autocorrect="off" spellcheck="false" inputmode="text">
+        </label>
+        <label class="field" for="login-pass">
+          <span>密码</span>
+          <input id="login-pass" name="password" type="password" autocomplete="current-password">
+        </label>
+        <p id="login-error" class="error" role="alert"></p>
+        <button id="login-submit" class="btn primary" type="submit">登录</button>
+      </form>
+
+      <p class="hint">仅在 HTTPS 下使用，密码不会保存在浏览器。</p>
+    </div>
+  </section>
+
+  <!-- ============ 控制台 ============ -->
+  <section id="console-view" class="view" hidden>
+    <div id="stage" class="stage">
+      <canvas id="screen" tabindex="0" aria-label="远程桌面画面"></canvas>
+
+      <div id="overlay" class="overlay" hidden>
+        <div class="overlay-box">
+          <div id="overlay-spinner" class="spinner" aria-hidden="true"></div>
+          <p id="overlay-text">正在连接桌面…</p>
+          <button id="overlay-retry" class="btn ghost" type="button" hidden>重新连接</button>
+        </div>
+      </div>
+
+      <div class="toolbar">
+        <div class="toolbar-group">
+          <span id="conn-dot" class="dot" data-state="off" aria-hidden="true"></span>
+          <span id="conn-text" class="conn-text">未连接</span>
+          <span id="res" class="res"></span>
+        </div>
+        <div class="toolbar-group">
+          <span id="fps" class="fps" title="帧率">— fps</span>
+          <button id="btn-keyboard" class="icon-btn touch-only" type="button" title="键盘" aria-label="键盘" aria-pressed="false">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <rect x="2.5" y="6" width="19" height="12" rx="2.5"></rect>
+              <path d="M6 9.5h.01M9.5 9.5h.01M13 9.5h.01M16.5 9.5h.01M6 13h.01M9.5 13h.01M13 13h.01M16.5 13h.01M7.5 16h9"></path>
+            </svg>
+          </button>
+          <button id="btn-fullscreen" class="icon-btn" type="button" title="全屏" aria-label="全屏">
+            <svg class="fs-enter" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M8 3H5.5A2.5 2.5 0 0 0 3 5.5V8"></path>
+              <path d="M16 3h2.5A2.5 2.5 0 0 1 21 5.5V8"></path>
+              <path d="M16 21h2.5A2.5 2.5 0 0 0 21 18.5V16"></path>
+              <path d="M8 21H5.5A2.5 2.5 0 0 1 3 18.5V16"></path>
+            </svg>
+            <svg class="fs-exit" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M8 3v2.5A2.5 2.5 0 0 1 5.5 8H3"></path>
+              <path d="M16 3v2.5A2.5 2.5 0 0 0 18.5 8H21"></path>
+              <path d="M8 21v-2.5A2.5 2.5 0 0 0 5.5 16H3"></path>
+              <path d="M16 21v-2.5a2.5 2.5 0 0 1 2.5-2.5H21"></path>
+            </svg>
+          </button>
+          <button id="btn-theme" class="icon-btn" type="button" title="切换主题" aria-label="切换主题">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="9"></circle>
+              <path d="M12 3a9 9 0 0 0 0 18z" fill="currentColor" stroke="none"></path>
+            </svg>
+          </button>
+          <button id="btn-logout" class="icon-btn" type="button" title="退出登录" aria-label="退出登录">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M14 4h3.5A2.5 2.5 0 0 1 20 6.5v11a2.5 2.5 0 0 1-2.5 2.5H14"></path>
+              <path d="M4 12h11"></path>
+              <path d="m8 8-4 4 4 4"></path>
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <div id="keybar" class="keybar" hidden>
+        <button class="key" type="button" data-key="Escape">Esc</button>
+        <button class="key" type="button" data-key="Tab">Tab</button>
+        <button class="key" type="button" data-key="Control">Ctrl</button>
+        <button class="key" type="button" data-key="Alt">Alt</button>
+        <button class="key" type="button" data-key="ArrowLeft" aria-label="左方向键">←</button>
+        <button class="key" type="button" data-key="ArrowUp" aria-label="上方向键">↑</button>
+        <button class="key" type="button" data-key="ArrowDown" aria-label="下方向键">↓</button>
+        <button class="key" type="button" data-key="ArrowRight" aria-label="右方向键">→</button>
+        <button class="key" type="button" data-key="Enter">Enter</button>
+        <button class="key" type="button" data-key="Backspace" aria-label="退格">⌫</button>
+      </div>
+
+      <textarea id="ime" class="ime" aria-label="远程文本输入" autocomplete="off"
+                autocapitalize="off" autocorrect="off" spellcheck="false"></textarea>
+    </div>
+  </section>
+
+  <script src="./app.js"></script>
+</body>
+</html>
