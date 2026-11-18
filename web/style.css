@@ -216,11 +216,11 @@ html.pseudo-landscape #console-view {
 }
 
 .toast {
-  position: fixed;
+  position: absolute;
   left: 50%;
   bottom: calc(26px + env(safe-area-inset-bottom));
   transform: translateX(-50%);
-  z-index: 60;
+  z-index: 6;
   max-width: 86vw;
   padding: 9px 16px;
   border-radius: 999px;
