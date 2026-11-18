@@ -83,6 +83,14 @@
               <path d="M6 9.5h.01M9.5 9.5h.01M13 9.5h.01M16.5 9.5h.01M6 13h.01M9.5 13h.01M13 13h.01M16.5 13h.01M7.5 16h9"></path>
             </svg>
           </button>
+          <button id="btn-rotate" class="icon-btn touch-only" type="button" title="横屏" aria-label="切换横屏" aria-pressed="false">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <rect x="8" y="2" width="8" height="20" rx="2.2"></rect>
+              <path d="M11 5h2"></path>
+              <path d="M20.5 8.6a8.5 8.5 0 0 0-3.6-4.3"></path>
+              <path d="m20.5 8.6-4.1-.6"></path>
+            </svg>
+          </button>
           <button id="btn-fullscreen" class="icon-btn" type="button" title="全屏" aria-label="全屏">
             <svg class="fs-enter" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M8 3H5.5A2.5 2.5 0 0 0 3 5.5V8"></path>
@@ -130,6 +138,8 @@
                 autocapitalize="off" autocorrect="off" spellcheck="false"></textarea>
     </div>
   </section>
+
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
   <script src="./app.js"></script>
 </body>

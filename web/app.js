@@ -53,6 +53,8 @@
     heldButtons: {}, /* 鼠标按下的键 */
     heldKeys: Object.create(null),
     modDown: Object.create(null),
+    landscapeLocked: false, /* 已通过 ScreenOrientation.lock 切到横屏 */
+    pseudoLandscape: false, /* 浏览器不支持方向锁定时用 CSS 旋转兜底 */
     composing: false
   };
 
@@ -77,6 +79,17 @@
         /* ignore */
       }
     }
+  }
+
+  var toastTimer = 0;
+  function showToast(text, ms) {
+    if (!dom.toast) return;
+    dom.toast.textContent = text;
+    dom.toast.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () {
+      dom.toast.hidden = true;
+    }, ms || 2600);
   }
 
   /* ------------------------------ 主题 ------------------------------ */
@@ -147,6 +160,7 @@
     releaseModifiers();
     dom.keybar.hidden = true;
     dom.btnKeyboard.setAttribute('aria-pressed', 'false');
+    if (S.landscapeLocked || S.pseudoLandscape) exitLandscape();
     if (dom.ime.value) dom.ime.value = '';
     S.fpsFrames = 0;
     S.fpsStart = 0;
@@ -606,12 +620,20 @@
 
   function resizeCanvas() {
     var canvas = dom.canvas;
-    if (!canvas || !dom.stage) return;
-    var rect = dom.stage.getBoundingClientRect();
-    if (!rect.width || !rect.height) return;
+    if (!canvas) return;
+    /* 用 canvas 自身的布局尺寸（伪横屏时舞台被旋转，getBoundingClientRect 会返回交换后的外接框） */
+    var cssW = canvas.clientWidth;
+    var cssH = canvas.clientHeight;
+    if (!cssW || !cssH) {
+      if (!dom.stage) return;
+      var rect = dom.stage.getBoundingClientRect();
+      if (!rect.width || !rect.height) return;
+      cssW = rect.width;
+      cssH = rect.height;
+    }
     var dpr = Math.min(window.devicePixelRatio || 1, 2);
-    var w = Math.max(1, Math.round(rect.width * dpr));
-    var h = Math.max(1, Math.round(rect.height * dpr));
+    var w = Math.max(1, Math.round(cssW * dpr));
+    var h = Math.max(1, Math.round(cssH * dpr));
     if (canvas.width !== w || canvas.height !== h) {
       canvas.width = w;
       canvas.height = h;
@@ -704,6 +726,26 @@
 
   /* 客户端坐标 → 归一化桌面坐标（0..1，相对主显示器） */
   function normalizePoint(clientX, clientY) {
+    if (S.pseudoLandscape) {
+      /* 舞台顺时针旋转 90°：屏幕坐标反推舞台局部坐标 */
+      var canvas = dom.canvas;
+      var dims = aspectDims();
+      if (!canvas || !dims[0] || !dims[1]) return null;
+      var cw = canvas.clientWidth;
+      var ch = canvas.clientHeight;
+      if (!cw || !ch) return null;
+      var localX = clientY;
+      var localY = window.innerWidth - clientX;
+      var scale = Math.min(cw / dims[0], ch / dims[1]);
+      var drawW = dims[0] * scale;
+      var drawH = dims[1] * scale;
+      var offX = (cw - drawW) / 2;
+      var offY = (ch - drawH) / 2;
+      return {
+        x: clamp01((localX - offX) / drawW),
+        y: clamp01((localY - offY) / drawH)
+      };
+    }
     var fit = fitRectCss();
     if (!fit) return null;
     var x = (clientX - fit.left) / fit.width;
@@ -1083,6 +1125,77 @@
     }
   }
 
+  /* ------------------------------ 横屏 ------------------------------ */
+  function supportsOrientationLock() {
+    return !!(window.screen && screen.orientation && typeof screen.orientation.lock === 'function');
+  }
+
+  function updateRotateButton() {
+    if (!dom.btnRotate) return;
+    var on = S.landscapeLocked || S.pseudoLandscape;
+    dom.btnRotate.classList.toggle('is-active', on);
+    dom.btnRotate.setAttribute('aria-pressed', on ? 'true' : 'false');
+  }
+
+  /* CSS 伪横屏：旋转整个舞台 90°，不依赖浏览器旋转锁定（iOS Safari 等） */
+  function applyPseudoLandscape(on) {
+    S.pseudoLandscape = !!on;
+    document.documentElement.classList.toggle('pseudo-landscape', !!on);
+    closeKeyboard();
+    resizeCanvas();
+    updateRotateButton();
+    if (on) showToast('横屏模式：把手机转 90° 即可横屏观看');
+  }
+
+  function enterNativeLandscape() {
+    var root = document.documentElement;
+    var fullscreen;
+    if (document.fullscreenElement) fullscreen = Promise.resolve();
+    else if (root.requestFullscreen) fullscreen = root.requestFullscreen();
+    else fullscreen = Promise.reject(new Error('fullscreen unsupported'));
+
+    fullscreen
+      .then(function () {
+        if (!supportsOrientationLock()) throw new Error('orientation lock unsupported');
+        return screen.orientation.lock('landscape');
+      })
+      .then(function () {
+        S.landscapeLocked = true;
+        updateRotateButton();
+        showToast('已切换横屏，再点一次恢复竖屏');
+      })
+      .catch(function () {
+        applyPseudoLandscape(true);
+      });
+  }
+
+  function exitLandscape() {
+    var wasLandscape = S.landscapeLocked || S.pseudoLandscape;
+    if (S.landscapeLocked) {
+      S.landscapeLocked = false;
+      try {
+        if (screen.orientation && typeof screen.orientation.unlock === 'function') screen.orientation.unlock();
+      } catch (e) {
+        /* ignore */
+      }
+    }
+    if (S.pseudoLandscape) applyPseudoLandscape(false);
+    /* 进入横屏时可能顺带进了全屏，退出横屏时一并退出 */
+    if (wasLandscape && document.fullscreenElement && document.exitFullscreen) {
+      var p = document.exitFullscreen();
+      if (p && p.catch) p.catch(function () {});
+    }
+    updateRotateButton();
+  }
+
+  function toggleLandscape() {
+    if (S.landscapeLocked || S.pseudoLandscape) {
+      exitLandscape();
+      return;
+    }
+    enterNativeLandscape();
+  }
+
   /* ------------------------------ 全屏 ------------------------------ */
   function toggleFullscreen() {
     var root = document.documentElement;
@@ -1099,6 +1212,15 @@
 
   function onFullscreenChange() {
     document.documentElement.classList.toggle('is-fullscreen', !!document.fullscreenElement);
+    if (!document.fullscreenElement && S.landscapeLocked) {
+      S.landscapeLocked = false;
+      try {
+        if (screen.orientation && typeof screen.orientation.unlock === 'function') screen.orientation.unlock();
+      } catch (e) {
+        /* ignore */
+      }
+      updateRotateButton();
+    }
     resizeCanvas();
   }
 
@@ -1114,6 +1236,10 @@
     });
     dom.btnFullscreen.addEventListener('click', function () {
       toggleFullscreen();
+      focusCanvas();
+    });
+    dom.btnRotate.addEventListener('click', function () {
+      toggleLandscape();
       focusCanvas();
     });
     dom.btnLogout.addEventListener('click', logout);
@@ -1209,9 +1335,11 @@
       keybar: $('keybar'),
       ime: $('ime'),
       btnKeyboard: $('btn-keyboard'),
+      btnRotate: $('btn-rotate'),
       btnFullscreen: $('btn-fullscreen'),
       btnTheme: $('btn-theme'),
-      btnLogout: $('btn-logout')
+      btnLogout: $('btn-logout'),
+      toast: $('toast')
     };
 
     bindUI();

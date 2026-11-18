@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import ctypes
 import io
+import json
 import os
 import sys
 import time
@@ -35,10 +36,18 @@ OUT.mkdir(exist_ok=True)
 WS_INIT_SCRIPT = """
 (() => {
   window.__wslog = [];
+  window.__sent = [];
   const Orig = window.WebSocket;
   function W(url, protocols) {
     const ws = protocols === undefined ? new Orig(url) : new Orig(url, protocols);
     window.__wslog.push({ ev: 'new', url: String(url) });
+    const origSend = ws.send.bind(ws);
+    ws.send = function (data) {
+      try {
+        if (typeof data === 'string') window.__sent.push(data);
+      } catch (e) {}
+      return origSend(data);
+    };
     ws.addEventListener('open', () => window.__wslog.push({ ev: 'open', url: String(url) }));
     ws.addEventListener('close', (e) => window.__wslog.push({ ev: 'close', code: e.code, reason: e.reason }));
     ws.addEventListener('error', () => window.__wslog.push({ ev: 'error' }));
@@ -47,6 +56,20 @@ WS_INIT_SCRIPT = """
   W.prototype = Orig.prototype;
   W.CONNECTING = 0; W.OPEN = 1; W.CLOSING = 2; W.CLOSED = 3;
   window.WebSocket = W;
+})();
+"""
+
+# 让浏览器认为不支持 ScreenOrientation.lock，从而稳定覆盖 CSS 伪横屏回退路径
+LANDSCAPE_STUB = """
+(() => {
+  try {
+    if (window.screen && window.screen.orientation) {
+      Object.defineProperty(window.screen.orientation, 'lock', {
+        configurable: true,
+        value: function () { return Promise.reject(new Error('stub: unsupported')); }
+      });
+    }
+  } catch (e) {}
 })();
 """
 
@@ -154,6 +177,7 @@ def login_and_wait(page, timeout: int = 45000) -> None:
 def desktop_checks(browser) -> None:
     print("\n== 桌面视口 1280x800 ==")
     context = browser.new_context(viewport={"width": 1280, "height": 800})
+    context.add_init_script(WS_INIT_SCRIPT)
     page = context.new_page()
     console_errors: list[str] = []
 
@@ -179,6 +203,7 @@ def desktop_checks(browser) -> None:
 
     page.screenshot(path=str(OUT / "desktop-light.png"))
     check("light 主题截图", (OUT / "desktop-light.png").stat().st_size > 5000)
+    check("桌面端隐藏横屏按钮", not page.locator("#btn-rotate").is_visible())
 
     # ---- 鼠标移动端到端（只移动，不点击；测试后复位）----
     physical = physical_screen()
@@ -186,14 +211,26 @@ def desktop_checks(browser) -> None:
     try:
         box = page.locator("#screen").bounding_box()
         page.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
-        time.sleep(1.2)
-        after = cursor_pos()
+        # 本机可能有人在真实使用鼠标，采样一段时间的窗口取最小偏差，避免人工干扰导致误判
         expected = (physical[0] // 2, physical[1] // 2)
-        dist = abs(after[0] - expected[0]) + abs(after[1] - expected[1])
+        best = None
+        after = expected
+        for _ in range(15):
+            time.sleep(0.1)
+            pos = cursor_pos()
+            dist = abs(pos[0] - expected[0]) + abs(pos[1] - expected[1])
+            if best is None or dist < best:
+                best = dist
+                after = pos
+            if dist <= 80:
+                break
+        dist = best if best is not None else 10**9
+        sent = page.evaluate("() => (window.__sent || []).filter(s => s.indexOf('\"t\":\"m\"') >= 0)")
+        last = json.loads(sent[-1]) if sent else {}
         check(
             "鼠标移动端到端注入(物理桌面中心±80px)",
             physical[0] > 0 and dist <= 80,
-            f"before={before} after={after} expected≈{expected} physical={physical} dist={dist}",
+            f"before={before} after={after} expected≈{expected} physical={physical} dist={dist} sent={last}",
         )
     finally:
         set_cursor_pos(*before)
@@ -227,6 +264,7 @@ def mobile_checks(browser) -> None:
     )
     page = context.new_page()
     context.add_init_script(WS_INIT_SCRIPT)
+    context.add_init_script(LANDSCAPE_STUB)
     errors: list[str] = []
     page.on("pageerror", lambda e: errors.append(str(e)))
     try:
@@ -248,6 +286,70 @@ def mobile_checks(browser) -> None:
     keybar_visible = page.locator("#keybar").is_visible()
     ime_focused = page.evaluate("() => document.activeElement && document.activeElement.id === 'ime'")
     check("点击键盘按钮展开键条/输入框", keybar_visible or ime_focused, f"keybar={keybar_visible} ime={ime_focused}")
+
+    # ---- 横屏：优先系统方向锁定，不支持时退回 CSS 伪横屏 ----
+    rotate_visible = page.locator("#btn-rotate").is_visible()
+    check("手机端显示横屏按钮", rotate_visible)
+    if rotate_visible:
+        saved_cursor = cursor_pos()
+        try:
+            page.tap("#btn-rotate")
+            page.wait_for_timeout(900)
+            state = page.evaluate(
+                "() => ({pseudo: document.documentElement.classList.contains('pseudo-landscape'),"
+                " fs: !!document.fullscreenElement,"
+                " type: (window.screen && window.screen.orientation && window.screen.orientation.type) || '',"
+                " pressed: document.querySelector('#btn-rotate').getAttribute('aria-pressed')})"
+            )
+            landscape_on = state["pseudo"] or state["fs"] or state["type"].startswith("landscape")
+            check("点击横屏按钮进入横屏", landscape_on and state["pressed"] == "true", str(state))
+            page.screenshot(path=str(OUT / "mobile-landscape.png"))
+
+            if state["pseudo"]:
+                res_text = (page.locator("#res").text_content() or "").replace(" ", "")
+                try:
+                    fw, fh = [int(v) for v in res_text.split("×")]
+                except Exception:
+                    fw, fh = 1600, 1000
+                page.mouse.move(100, 300)
+                page.wait_for_timeout(400)
+                sent = page.evaluate(
+                    "() => (window.__sent || []).filter(s => s.indexOf('\"t\":\"m\"') >= 0)"
+                )
+                last = json.loads(sent[-1]) if sent else {}
+                cw = page.evaluate("() => document.querySelector('#screen').clientWidth")
+                ch = page.evaluate("() => document.querySelector('#screen').clientHeight")
+                vw = page.evaluate("() => window.innerWidth")
+                # 舞台顺时针旋转 90° 的逆映射：localX = clientY, localY = innerWidth - clientX
+                local_x = 300
+                local_y = vw - 100
+                scale = min(cw / fw, ch / fh)
+                draw_w, draw_h = fw * scale, fh * scale
+                off_x, off_y = (cw - draw_w) / 2, (ch - draw_h) / 2
+                expect_x = min(1.0, max(0.0, (local_x - off_x) / draw_w))
+                expect_y = min(1.0, max(0.0, (local_y - off_y) / draw_h))
+                got_x, got_y = last.get("x"), last.get("y")
+                ok = (
+                    got_x is not None
+                    and abs(got_x - expect_x) < 0.03
+                    and abs(got_y - expect_y) < 0.03
+                )
+                check("伪横屏触控坐标映射正确", ok, f"sent={last} expect=({expect_x:.3f},{expect_y:.3f})")
+
+            page.tap("#btn-rotate")
+            page.wait_for_timeout(700)
+            off = page.evaluate(
+                "() => ({pseudo: document.documentElement.classList.contains('pseudo-landscape'),"
+                " fs: !!document.fullscreenElement,"
+                " pressed: document.querySelector('#btn-rotate').getAttribute('aria-pressed')})"
+            )
+            check(
+                "再次点击恢复竖屏",
+                (not off["pseudo"]) and (not off["fs"]) and off["pressed"] == "false",
+                str(off),
+            )
+        finally:
+            set_cursor_pos(*saved_cursor)
 
     check("手机端无 JS 报错", not errors, "; ".join(errors[:3]))
     context.close()

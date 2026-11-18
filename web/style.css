@@ -161,6 +161,11 @@ button {
   background: var(--surface-2);
 }
 
+.icon-btn.is-active {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
 .icon-btn:active {
   transform: scale(0.96);
 }
@@ -185,8 +190,49 @@ button {
 }
 
 /* ==========================================================================
-   登录页
+   横屏 / 轻提示
    ========================================================================== */
+
+/* 伪横屏：浏览器不支持 ScreenOrientation.lock 时，用 CSS 旋转整个舞台。
+   舞台宽高按 100vh / 100vw 交换，旋转 90° 后正好铺满视口。 */
+html.pseudo-landscape,
+html.pseudo-landscape body {
+  overflow: hidden;
+}
+
+html.pseudo-landscape .stage {
+  position: fixed;
+  inset: auto;
+  left: calc((100vw - 100vh) / 2);
+  top: calc((100vh - 100vw) / 2);
+  width: 100vh;
+  height: 100vw;
+  transform: rotate(90deg);
+  transform-origin: center center;
+}
+
+html.pseudo-landscape #console-view {
+  background: var(--bg);
+}
+
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(26px + env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  z-index: 60;
+  max-width: 86vw;
+  padding: 9px 16px;
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  font-size: 12.5px;
+  line-height: 1.5;
+  text-align: center;
+  pointer-events: none;
+}
 #login-view {
   display: flex;
   align-items: center;
