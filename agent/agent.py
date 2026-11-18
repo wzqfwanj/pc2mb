@@ -802,6 +802,22 @@ class InputInjector:
             self._keystroke_unicode(ch)
         # IME 输入框需要一次回车/确认？协议是直接输入文本，逐字符 Unicode 最可靠。
 
+    def vk_text(self, text: str) -> None:
+        """按物理键盘的 VK 路径逐字符注入。
+
+        这是给手机端九宫格拼音键盘用的：Unicode 注入会绕过 Windows 输入法，
+        VK 注入等同于真实键盘按键，Microsoft 拼音等 IME 才能组词/出候选。
+        """
+        for ch in text or "":
+            if not ch:
+                continue
+            vk = self._vk_scan(ch)
+            if vk is None:
+                self._keystroke_unicode(ch)
+                continue
+            self._send(_keyboard_input(vk, 0, self._vk_flags(vk)))
+            self._send(_keyboard_input(vk, 0, self._vk_flags(vk) | KEYEVENTF_KEYUP))
+
     def release_all(self) -> None:
         """断线 / 退出时释放所有按下的键（避免 Ctrl 卡住）。"""
         pending = list(self._down.items())
@@ -842,6 +858,8 @@ class InputInjector:
                 self.key_up(ev.get("k", ""))
             elif kind == "txt":
                 self.text(ev.get("s", ""))
+            elif kind == "vk":
+                self.vk_text(ev.get("s", ""))
             else:
                 LOG.debug("unknown input event %r, ignored", kind)
         except Exception:  # noqa: BLE001 - 单个事件失败不能拖垮连接

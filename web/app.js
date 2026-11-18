@@ -55,6 +55,8 @@
     modDown: Object.create(null),
     landscapeLocked: false, /* 已通过 ScreenOrientation.lock 切到横屏 */
     pseudoLandscape: false, /* 浏览器不支持方向锁定时用 CSS 旋转兜底 */
+    padMode: false, /* 横屏两侧控制区（左九宫格拼音键盘 / 右触摸板）是否启用 */
+    padPos: { x: 0.5, y: 0.5 }, /* 触摸板虚拟光标位置（归一化） */
     composing: false
   };
 
@@ -197,6 +199,8 @@
     setLoginError('');
     refreshThemeColors();
     resizeCanvas();
+    S.padPos = { x: 0.5, y: 0.5 };
+    updatePadDot();
     updateStatus();
     connect();
     focusCanvas();
@@ -473,6 +477,7 @@
         S.frameW = msg.w;
         S.frameH = msg.h;
         updateRes();
+        updatePadMode();
       }
     } else if (msg.t === 'pong') {
       /* 心跳回应，无需处理 */
@@ -534,6 +539,7 @@
             S.frameW = bmp.width;
             S.frameH = bmp.height;
             updateRes();
+            updatePadMode();
           }
         }
         redraw();
@@ -639,6 +645,7 @@
       canvas.height = h;
     }
     redraw();
+    updatePadMode();
   }
 
   /* ------------------------------ 状态 / 遮罩 UI ------------------------------ */
@@ -776,6 +783,7 @@
   }
 
   function onMouseDown(e) {
+    if (S.padMode) return;
     focusCanvas();
     e.preventDefault();
     sendMouseMove(e.clientX, e.clientY);
@@ -796,6 +804,7 @@
   }
 
   function onWheel(e) {
+    if (S.padMode) return;
     e.preventDefault();
     var raw = e.deltaY;
     if (e.deltaMode === 1) raw *= 40; /* 行模式 */
@@ -927,6 +936,7 @@
   }
 
   function onTouchStart(e) {
+    if (S.padMode) return;
     e.preventDefault();
     var touches = e.touches;
     if (!touches || !touches.length) return;
@@ -943,6 +953,7 @@
   }
 
   function onTouchMove(e) {
+    if (S.padMode) return;
     e.preventDefault();
     var touches = e.touches;
     if (!touches || !touches.length) return;
@@ -984,6 +995,7 @@
   }
 
   function onTouchEnd(e) {
+    if (S.padMode) return;
     e.preventDefault();
     var touches = e.touches || [];
 
@@ -1020,6 +1032,7 @@
   }
 
   function onTouchCancel(e) {
+    if (S.padMode) return;
     e.preventDefault();
     cancelSingle();
     twoFinger = false;
@@ -1125,6 +1138,298 @@
     }
   }
 
+  /* ------------------------------ 横屏两侧控制区 ------------------------------ */
+  var T9_COMMIT_MS = 800;
+  var PAD_LONG_PRESS_MS = 600;
+  var PAD_SLOP = 6;
+  var PAD_WHEEL_STEP = 40;
+  var PAD_SENSITIVITY = 0.85; /* 拖过触摸板 85% 尺寸 ≈ 屏幕宽度 */
+
+  var t9State = { key: '', index: 0, pending: '', el: null, timer: 0, pressTimer: 0, longFired: false };
+  var padGesture = null;
+  var padPointers = Object.create(null);
+  var padWheelAcc = 0;
+
+  function isCoarsePointer() {
+    return !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+  }
+
+  /* 根据画面实际绘制区域两侧的空白宽度，决定是否启用两侧控制区 */
+  function updatePadMode() {
+    var canvas = dom.canvas;
+    var dims = aspectDims();
+    var blank = 0;
+    if (canvas && canvas.clientWidth && canvas.clientHeight && dims[0] > 0 && dims[1] > 0) {
+      var scale = Math.min(canvas.clientWidth / dims[0], canvas.clientHeight / dims[1]);
+      blank = Math.round((canvas.clientWidth - dims[0] * scale) / 2);
+    }
+    var landscape =
+      S.pseudoLandscape || (window.matchMedia && window.matchMedia('(orientation: landscape)').matches);
+    var on = !!(landscape && isCoarsePointer() && blank >= 86);
+    if (on) document.documentElement.style.setProperty('--pad-w', blank + 'px');
+    if (on !== S.padMode) {
+      S.padMode = on;
+      document.documentElement.classList.toggle('pad-mode', on);
+      commitT9();
+      cancelPadGesture();
+      S.padPos = { x: 0.5, y: 0.5 };
+    }
+    if (on) updatePadDot();
+  }
+
+  function updatePadDot() {
+    if (!dom.padDot) return;
+    dom.padDot.style.left = (S.padPos.x * 100).toFixed(2) + '%';
+    dom.padDot.style.top = (S.padPos.y * 100).toFixed(2) + '%';
+  }
+
+  /* ---- 九宫格拼音（T9 多次按键，字母通过 VK 注入远端输入法组词） ---- */
+  function t9Restore(btn) {
+    var small = btn.querySelector('small');
+    if (small) small.textContent = (btn.getAttribute('data-letters') || '').toUpperCase();
+  }
+
+  function commitT9() {
+    if (!t9State.key) return;
+    var pending = t9State.pending;
+    var el = t9State.el;
+    t9State.key = '';
+    t9State.index = 0;
+    t9State.pending = '';
+    t9State.el = null;
+    if (t9State.timer) {
+      clearTimeout(t9State.timer);
+      t9State.timer = 0;
+    }
+    if (el) {
+      el.classList.remove('active');
+      t9Restore(el);
+    }
+    if (pending) {
+      send({ t: 'vk', s: pending });
+    }
+  }
+
+  function t9Tap(btn) {
+    var letters = btn.getAttribute('data-letters') || btn.getAttribute('data-digit') || '';
+    if (!letters) return;
+    if (letters.length <= 1) {
+      send({ t: 'vk', s: letters });
+      return;
+    }
+    if (t9State.key !== letters) {
+      commitT9();
+      t9State.key = letters;
+      t9State.index = 0;
+    } else {
+      t9State.index = (t9State.index + 1) % letters.length;
+    }
+    t9State.pending = letters.charAt(t9State.index);
+    t9State.el = btn;
+    btn.classList.add('active');
+    var small = btn.querySelector('small');
+    if (small) small.textContent = t9State.pending.toUpperCase();
+    if (t9State.timer) clearTimeout(t9State.timer);
+    t9State.timer = setTimeout(function () {
+      t9State.timer = 0;
+      commitT9();
+    }, T9_COMMIT_MS);
+  }
+
+  function sendCtrlSpace() {
+    send({ t: 'kd', k: 'Control' });
+    setTimeout(function () {
+      send({ t: 'kd', k: ' ' });
+    }, 40);
+    setTimeout(function () {
+      send({ t: 'ku', k: ' ' });
+      send({ t: 'ku', k: 'Control' });
+    }, 120);
+  }
+
+  function t9LongPress(btn) {
+    commitT9();
+    if (btn.id === 't9-space') {
+      sendCtrlSpace();
+      showToast('已切换输入法 中/英（Ctrl+Space）');
+      return;
+    }
+    if (btn.id === 't9-enter') {
+      sendKeyTap('Escape');
+      return;
+    }
+    if (btn.id === 't9-back') {
+      sendKeyTap('Tab');
+      return;
+    }
+    var digit = btn.getAttribute('data-digit');
+    if (digit) send({ t: 'vk', s: digit }); /* 数字键 = 选输入法候选词 */
+  }
+
+  function t9TapControl(btn) {
+    if (btn.id === 't9-back') sendKeyTap('Backspace');
+    else if (btn.id === 't9-space') send({ t: 'vk', s: ' ' });
+    else if (btn.id === 't9-enter') sendKeyTap('Enter');
+  }
+
+  function bindT9Button(btn) {
+    btn.addEventListener('pointerdown', function (e) {
+      e.preventDefault();
+      try {
+        btn.setPointerCapture(e.pointerId);
+      } catch (err) {
+        /* ignore */
+      }
+      t9State.longFired = false;
+      clearTimeout(t9State.pressTimer);
+      t9State.pressTimer = setTimeout(function () {
+        t9State.pressTimer = 0;
+        t9State.longFired = true;
+        t9LongPress(btn);
+      }, PAD_LONG_PRESS_MS);
+    });
+    btn.addEventListener('pointerup', function (e) {
+      e.preventDefault();
+      clearTimeout(t9State.pressTimer);
+      t9State.pressTimer = 0;
+      if (t9State.longFired) {
+        t9State.longFired = false;
+        return;
+      }
+      if (btn.classList.contains('t9-ctrl')) t9TapControl(btn);
+      else t9Tap(btn);
+    });
+    btn.addEventListener('pointercancel', function () {
+      clearTimeout(t9State.pressTimer);
+      t9State.pressTimer = 0;
+    });
+    btn.addEventListener('contextmenu', function (e) {
+      e.preventDefault();
+    });
+  }
+
+  /* ---- 右侧触摸板：相对移动，单击左键，长按右键，双指滚动 ---- */
+  function padUserDelta(e, prev) {
+    var dx = e.clientX - prev.x;
+    var dy = e.clientY - prev.y;
+    if (S.pseudoLandscape) {
+      /* 伪横屏下舞台被旋转 90°：换算到用户视角 */
+      var ndx = dy;
+      var ndy = -dx;
+      dx = ndx;
+      dy = ndy;
+    }
+    return { dx: dx, dy: dy };
+  }
+
+  function padMoveBy(dx, dy) {
+    var el = dom.padTouch;
+    var w = (el && el.clientWidth) || 1;
+    var h = (el && el.clientHeight) || 1;
+    S.padPos.x = clamp01(S.padPos.x + dx / (w * PAD_SENSITIVITY));
+    S.padPos.y = clamp01(S.padPos.y + dy / (h * PAD_SENSITIVITY));
+    send({ t: 'm', x: round4(S.padPos.x), y: round4(S.padPos.y) });
+    updatePadDot();
+  }
+
+  function padClick(button) {
+    send({ t: 'm', x: round4(S.padPos.x), y: round4(S.padPos.y) });
+    send({ t: 'd', b: button });
+    setTimeout(function () {
+      send({ t: 'u', b: button });
+    }, 50);
+  }
+
+  function cancelPadGesture() {
+    if (padGesture) {
+      clearTimeout(padGesture.longTimer);
+      padGesture = null;
+    }
+    padPointers = Object.create(null);
+    padWheelAcc = 0;
+  }
+
+  function padPointerDown(e) {
+    if (!S.padMode) return;
+    e.preventDefault();
+    try {
+      dom.padTouch.setPointerCapture(e.pointerId);
+    } catch (err) {
+      /* ignore */
+    }
+    padPointers[e.pointerId] = { x: e.clientX, y: e.clientY };
+    var ids = Object.keys(padPointers);
+    if (ids.length === 1) {
+      padWheelAcc = 0;
+      padGesture = {
+        id: e.pointerId,
+        startX: e.clientX,
+        startY: e.clientY,
+        moved: false,
+        longFired: false,
+        longTimer: setTimeout(function () {
+          if (!padGesture || padGesture.moved || padGesture.longFired) return;
+          padGesture.longFired = true;
+          padClick(2);
+        }, PAD_LONG_PRESS_MS)
+      };
+    } else {
+      if (padGesture) {
+        clearTimeout(padGesture.longTimer);
+        padGesture.longFired = true;
+      }
+      padWheelAcc = 0;
+    }
+  }
+
+  function padPointerMove(e) {
+    if (!S.padMode) return;
+    var prev = padPointers[e.pointerId];
+    if (!prev) return;
+    e.preventDefault();
+    var delta = padUserDelta(e, prev);
+    padPointers[e.pointerId] = { x: e.clientX, y: e.clientY };
+    if (padGesture && padGesture.id === e.pointerId) {
+      var totalX = e.clientX - padGesture.startX;
+      var totalY = e.clientY - padGesture.startY;
+      if (!padGesture.moved && (Math.abs(totalX) > PAD_SLOP || Math.abs(totalY) > PAD_SLOP)) {
+        padGesture.moved = true;
+        clearTimeout(padGesture.longTimer);
+      }
+      if (padGesture.moved) {
+        padMoveBy(delta.dx, delta.dy);
+        return;
+      }
+    }
+    /* 双指：累加位移转滚轮 */
+    var ids = Object.keys(padPointers);
+    if (ids.length >= 2) {
+      padWheelAcc += delta.dy;
+      while (Math.abs(padWheelAcc) >= PAD_WHEEL_STEP) {
+        var dir = padWheelAcc > 0 ? 1 : -1;
+        send({ t: 'w', dy: dir * 120 });
+        padWheelAcc -= dir * PAD_WHEEL_STEP;
+      }
+    }
+  }
+
+  function padPointerUp(e) {
+    if (!S.padMode) return;
+    var prev = padPointers[e.pointerId];
+    delete padPointers[e.pointerId];
+    if (!prev) return;
+    e.preventDefault();
+    if (padGesture && padGesture.id === e.pointerId) {
+      clearTimeout(padGesture.longTimer);
+      var gesture = padGesture;
+      padGesture = null;
+      if (!gesture.moved && !gesture.longFired) {
+        padClick(0); /* 轻点 = 左键单击 */
+      }
+    }
+    if (Object.keys(padPointers).length < 2) padWheelAcc = 0;
+  }
+
   /* ------------------------------ 横屏 ------------------------------ */
   function supportsOrientationLock() {
     return !!(window.screen && screen.orientation && typeof screen.orientation.lock === 'function');
@@ -1162,6 +1467,7 @@
       .then(function () {
         S.landscapeLocked = true;
         updateRotateButton();
+        updatePadMode();
         showToast('已切换横屏，再点一次恢复竖屏');
       })
       .catch(function () {
@@ -1244,6 +1550,17 @@
     });
     dom.btnLogout.addEventListener('click', logout);
     dom.btnKeyboard.addEventListener('click', toggleKeyboard);
+    if (dom.padKeys && dom.padTouch) {
+      var t9Buttons = dom.padKeys.querySelectorAll('button.t9');
+      for (var i = 0; i < t9Buttons.length; i++) bindT9Button(t9Buttons[i]);
+      dom.padTouch.addEventListener('pointerdown', padPointerDown);
+      dom.padTouch.addEventListener('pointermove', padPointerMove);
+      dom.padTouch.addEventListener('pointerup', padPointerUp);
+      dom.padTouch.addEventListener('pointercancel', padPointerUp);
+      dom.padTouch.addEventListener('contextmenu', function (e) {
+        e.preventDefault();
+      });
+    }
     dom.keybar.addEventListener('click', onKeybarClick);
     dom.overlayRetry.addEventListener('click', function () {
       if (!S.loggedIn) return;
@@ -1290,6 +1607,7 @@
     var canvas = dom.canvas;
 
     canvas.addEventListener('mousemove', function (e) {
+      if (S.padMode) return;
       queueMouseMove(e.clientX, e.clientY);
     });
     canvas.addEventListener('mousedown', onMouseDown);
@@ -1339,7 +1657,10 @@
       btnFullscreen: $('btn-fullscreen'),
       btnTheme: $('btn-theme'),
       btnLogout: $('btn-logout'),
-      toast: $('toast')
+      toast: $('toast'),
+      padKeys: $('pad-keys'),
+      padTouch: $('pad-touch'),
+      padDot: $('pad-dot')
     };
 
     bindUI();

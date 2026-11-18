@@ -46,6 +46,10 @@ WS_INIT_SCRIPT = """
       try {
         if (typeof data === 'string') window.__sent.push(data);
       } catch (e) {}
+      // __blockInput = true 时只记录、不真正发给服务端，避免测试误操作真实桌面
+      if (window.__blockInput && typeof data === 'string' && /"t":"(m|d|u|w|kd|ku|txt|vk)"/.test(data)) {
+        return undefined;
+      }
       return origSend(data);
     };
     ws.addEventListener('open', () => window.__wslog.push({ ev: 'open', url: String(url) }));
@@ -286,6 +290,8 @@ def mobile_checks(browser) -> None:
     keybar_visible = page.locator("#keybar").is_visible()
     ime_focused = page.evaluate("() => document.activeElement && document.activeElement.id === 'ime'")
     check("点击键盘按钮展开键条/输入框", keybar_visible or ime_focused, f"keybar={keybar_visible} ime={ime_focused}")
+    page.tap("#btn-keyboard")  # 收起键条，避免遮挡后续横屏测试
+    page.wait_for_timeout(200)
 
     # ---- 横屏：优先系统方向锁定，不支持时退回 CSS 伪横屏 ----
     rotate_visible = page.locator("#btn-rotate").is_visible()
@@ -297,6 +303,7 @@ def mobile_checks(browser) -> None:
             page.wait_for_timeout(900)
             state = page.evaluate(
                 "() => ({pseudo: document.documentElement.classList.contains('pseudo-landscape'),"
+                " padMode: document.documentElement.classList.contains('pad-mode'),"
                 " fs: !!document.fullscreenElement,"
                 " type: (window.screen && window.screen.orientation && window.screen.orientation.type) || '',"
                 " pressed: document.querySelector('#btn-rotate').getAttribute('aria-pressed')})"
@@ -305,7 +312,8 @@ def mobile_checks(browser) -> None:
             check("点击横屏按钮进入横屏", landscape_on and state["pressed"] == "true", str(state))
             page.screenshot(path=str(OUT / "mobile-landscape.png"))
 
-            if state["pseudo"]:
+            if state["pseudo"] and not state["padMode"]:
+                # 无两侧控制区时（空白太窄），画面仍走直接触摸/鼠标坐标映射
                 res_text = (page.locator("#res").text_content() or "").replace(" ", "")
                 try:
                     fw, fh = [int(v) for v in res_text.split("×")]
@@ -335,6 +343,82 @@ def mobile_checks(browser) -> None:
                     and abs(got_y - expect_y) < 0.03
                 )
                 check("伪横屏触控坐标映射正确", ok, f"sent={last} expect=({expect_x:.3f},{expect_y:.3f})")
+
+            if state["pseudo"] and state["padMode"]:
+                # 触摸/按键只记录 WebSocket 消息、不真正注入远端桌面，避免测试误操作
+                page.evaluate("() => { window.__blockInput = true; }")
+                pad_state = page.evaluate(
+                    "() => ({mode: document.documentElement.classList.contains('pad-mode'),"
+                    " keys: getComputedStyle(document.querySelector('#pad-keys')).display,"
+                    " touch: getComputedStyle(document.querySelector('#pad-touch')).display,"
+                    " buttons: document.querySelectorAll('#pad-keys button.t9').length,"
+                    " padW: getComputedStyle(document.documentElement).getPropertyValue('--pad-w').trim(),"
+                    " keysW: document.querySelector('#pad-keys').clientWidth,"
+                    " touchW: document.querySelector('#pad-touch').clientWidth})"
+                )
+                check(
+                    "横屏显示两侧控制区",
+                    pad_state["mode"] and pad_state["keys"] == "grid" and pad_state["touch"] == "flex",
+                    str(pad_state),
+                )
+                check("横屏两侧面板等宽且贴着两侧", pad_state["keysW"] == pad_state["touchW"] > 0, str(pad_state))
+                check("九宫格共 12 个按键", pad_state["buttons"] == 12, str(pad_state["buttons"]))
+
+                # 九宫格：连点 ABC 两次 = b（800ms 后自动提交）
+                page.tap("#pad-keys button[data-letters='abc']")
+                page.wait_for_timeout(120)
+                page.tap("#pad-keys button[data-letters='abc']")
+                page.wait_for_timeout(1100)
+                sent = page.evaluate("() => window.__sent || []")
+                check(
+                    "九宫格多次按键发送字母(vk)",
+                    any('"t":"vk"' in s and '"s":"b"' in s for s in sent[-8:]),
+                    str(sent[-5:]),
+                )
+
+                # 触摸板：拖动 = 相对移动（不应误触发点击）
+                box = page.locator("#pad-touch").bounding_box()
+                cx, cy = box["x"] + box["width"] / 2, box["y"] + box["height"] / 2
+                before_count = len(page.evaluate("() => window.__sent || []"))
+                page.mouse.move(cx, cy)
+                page.mouse.down()
+                page.mouse.move(cx - 30, cy - 50, steps=8)
+                page.mouse.up()
+                page.wait_for_timeout(300)
+                moved = page.evaluate("() => window.__sent || []")[before_count:]
+                m_events = [json.loads(s) for s in moved if '"t":"m"' in s]
+                clicks = [s for s in moved if '"t":"d"' in s or '"t":"u"' in s]
+                check(
+                    "触摸板拖动产生相对移动",
+                    bool(m_events) and (abs(m_events[0]["x"] - 0.5) > 0.005 or abs(m_events[0]["y"] - 0.5) > 0.005),
+                    str(moved[:4]),
+                )
+                check("拖动不误触发点击", not clicks, str(clicks[:3]))
+
+                # 触摸板轻点 = 左键单击
+                before_count = len(page.evaluate("() => window.__sent || []"))
+                page.mouse.move(cx, cy)
+                page.mouse.down()
+                page.mouse.up()
+                page.wait_for_timeout(300)
+                tapped = page.evaluate("() => window.__sent || []")[before_count:]
+                check(
+                    "触摸板轻点 = 左键单击",
+                    any('"t":"d","b":0' in s for s in tapped) and any('"t":"u","b":0' in s for s in tapped),
+                    str(tapped[:4]),
+                )
+
+                # 画面直接触摸应被禁用
+                before_count = len(page.evaluate("() => window.__sent || []"))
+                page.touchscreen.tap(195, 422)
+                page.wait_for_timeout(400)
+                touch_inputs = [
+                    s
+                    for s in page.evaluate("() => window.__sent || []")[before_count:]
+                    if any(f'"t":"{kind}"' in s for kind in ("m", "d", "u", "w", "kd", "ku", "txt", "vk"))
+                ]
+                check("触摸板模式下画面不响应直接触摸", not touch_inputs, str(touch_inputs[:3]))
+                page.evaluate("() => { window.__blockInput = false; }")
 
             page.tap("#btn-rotate")
             page.wait_for_timeout(700)

@@ -57,6 +57,7 @@
 {"t":"kd","k":"a"}                // 键盘按下，k 取 KeyboardEvent.key（"a" / "Enter" / "Control" / "ArrowUp" ...）
 {"t":"ku","k":"a"}                // 键盘抬起
 {"t":"txt","s":"你好"}            // 直接输入一段文本（手机软键盘/IME 用），走 unicode 注入
+{"t":"vk","s":"nihao"}            // 按物理键盘 VK 逐字符注入（手机九宫格拼音用，可触发远端输入法组词）
 ```
 
 规则：

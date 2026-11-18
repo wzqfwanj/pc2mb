@@ -138,6 +138,26 @@
                 autocapitalize="off" autocorrect="off" spellcheck="false"></textarea>
 
       <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
+      <!-- 横屏两侧控制区：左侧九宫格拼音键盘，右侧鼠标触摸板（仅手机横屏显示） -->
+      <div id="pad-keys" class="pad pad-keys">
+        <button class="t9" type="button" data-digit="1" data-letters="1">1</button>
+        <button class="t9" type="button" data-digit="2" data-letters="abc">2<small>ABC</small></button>
+        <button class="t9" type="button" data-digit="3" data-letters="def">3<small>DEF</small></button>
+        <button class="t9" type="button" data-digit="4" data-letters="ghi">4<small>GHI</small></button>
+        <button class="t9" type="button" data-digit="5" data-letters="jkl">5<small>JKL</small></button>
+        <button class="t9" type="button" data-digit="6" data-letters="mno">6<small>MNO</small></button>
+        <button class="t9" type="button" data-digit="7" data-letters="pqrs">7<small>PQRS</small></button>
+        <button class="t9" type="button" data-digit="8" data-letters="tuv">8<small>TUV</small></button>
+        <button class="t9" type="button" data-digit="9" data-letters="wxyz">9<small>WXYZ</small></button>
+        <button id="t9-back" class="t9 t9-ctrl" type="button" aria-label="退格">⌫</button>
+        <button id="t9-space" class="t9 t9-ctrl" type="button">空格</button>
+        <button id="t9-enter" class="t9 t9-ctrl" type="button">↵</button>
+      </div>
+      <div id="pad-touch" class="pad pad-touch">
+        <div id="pad-dot" class="pad-dot"></div>
+        <span class="pad-hint">触摸板</span>
+      </div>
     </div>
   </section>
 

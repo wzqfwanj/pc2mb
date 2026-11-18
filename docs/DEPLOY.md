@@ -110,6 +110,18 @@ curl -s https://YOUR_DOMAIN/pc2mb/api/health     # {"ok":true,...}
 Caddy 会自动处理 WebSocket Upgrade，无需额外配置；站点级 CSP 的 `connect-src 'self'`
 已允许同源 `wss://`。
 
+> **注意：站点级 Basic Auth**。如果 `wkeeli.cn` 站点块里还有全站 `basic_auth`（本仓库线上环境
+> 后来加过），必须给 `/pc2mb/*` 开例外，否则页面和 Agent 的 WSS 都会先被 401 拦下
+> （本应用自己就有账号密码登录）。在对应 matcher 里追加一行：
+>
+> ```caddyfile
+> @not_local {
+>     not remote_ip 127.0.0.1 ::1 8.133.209.25 10.0.0.0/8 172.16.0.0/12
+>     not path /pc2mb/*
+> }
+> basic_auth @not_local { ... }
+> ```
+
 ## 5. Windows 被控端 Agent
 
 ```powershell
