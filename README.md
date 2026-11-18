@@ -56,6 +56,10 @@ pip install -r agent/requirements.txt
 python agent/agent.py --server ws://127.0.0.1:18091/ws/agent --token <PC2MB_AGENT_TOKEN>
 ```
 
+> Windows PowerShell 下请不要用 `>` 重定向（会写成 UTF-16）：
+> `python server/app.py --gen-secrets | Set-Content .env -Encoding utf8`
+> （服务端已兼容 BOM/UTF-16，但统一 UTF-8 更省心。）
+
 Agent 配置优先级：命令行参数 > 环境变量 > `agent/agent.env`：
 
 ```ini

@@ -56,11 +56,18 @@ log = logging.getLogger(APP_NAME)
 # 配置
 # --------------------------------------------------------------------------- #
 def load_env_file(path: Path = ENV_FILE) -> None:
-    """极简 .env 解析（KEY=VALUE，# 注释），不覆盖已有环境变量。"""
+    """极简 .env 解析（KEY=VALUE，# 注释），不覆盖已有环境变量。
+
+    兼容 Windows 记事本/PowerShell 可能写入的 BOM 或 UTF-16 编码。
+    """
     if not path.exists():
         return
-    # utf-8-sig：兼容 Windows 记事本/PowerShell 写入的 BOM
-    for raw in path.read_text(encoding="utf-8-sig", errors="replace").splitlines():
+    data = path.read_bytes()
+    if data.startswith(b"\xff\xfe") or data.startswith(b"\xfe\xff"):
+        text = data.decode("utf-16", errors="replace")
+    else:
+        text = data.decode("utf-8-sig", errors="replace")
+    for raw in text.splitlines():
         line = raw.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue

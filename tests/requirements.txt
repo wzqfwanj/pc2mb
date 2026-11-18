@@ -1,0 +1,5 @@
+# 测试依赖（浏览器冒烟测试需要本机 Chrome/Edge；Playwright 包本身不带浏览器）
+requests>=2.31
+playwright>=1.40
+Pillow>=10.0
+websockets>=12.0

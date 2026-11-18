@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   注册 / 卸载 pc2mb Windows Agent 的开机自启（当前用户登录时后台隐藏运行）。
 
